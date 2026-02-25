@@ -5,16 +5,23 @@ import Header from './components/Header.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Catalog from './components/Catalog.jsx';
 import EanBank from './components/EanBank.jsx';
+import AllegroSync from './components/AllegroSync.jsx';
 import Login from './components/Login.jsx';
 
 function AppInner() {
   const [tab, setTab] = useState('dashboard');
   const [activeModel, setActiveModel] = useState(null);
+  const [allegroKonto, setAllegroKonto] = useState(null);
   const { loading } = useStore();
 
   const goToModel = (modelId) => {
     setActiveModel(modelId);
     setTab('catalog');
+  };
+
+  const goToAllegro = (konto) => {
+    setAllegroKonto(konto || null);
+    setTab('allegro');
   };
 
   if (loading) {
@@ -32,9 +39,10 @@ function AppInner() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <Header tab={tab} setTab={setTab} />
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        {tab === 'dashboard' && <Dashboard goToModel={goToModel} setTab={setTab} />}
+        {tab === 'dashboard' && <Dashboard goToModel={goToModel} setTab={setTab} goToAllegro={goToAllegro} />}
         {tab === 'catalog' && <Catalog activeModel={activeModel} setActiveModel={setActiveModel} />}
         {tab === 'eanbank' && <EanBank />}
+        {tab === 'allegro' && <AllegroSync initialKonto={allegroKonto} />}
       </div>
     </div>
   );

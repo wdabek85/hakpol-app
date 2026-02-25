@@ -1,10 +1,14 @@
+import { useEffect, useMemo } from 'react';
 import { useStore } from '../store.jsx';
 import { KONTA, KONTA_COLORS } from '../utils/constants.js';
 
 const btn = { padding: '6px 12px', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 };
 
-export default function Dashboard({ goToModel, setTab }) {
-  const { models, eanBankByModel, stats, eanValidation, getAvailableEans } = useStore();
+export default function Dashboard({ goToModel, setTab, goToAllegro }) {
+  const { models, eanBankByModel, allegroOferty, stats, eanValidation, getAvailableEans, loadAllAllegroOferty } = useStore();
+
+  // Load allegro counts on mount
+  useEffect(() => { loadAllAllegroOferty(); }, [loadAllAllegroOferty]);
 
   const emptyModels = models.filter(m => !m.auta?.length);
   const modelsWithDupEan = models.filter(m => m.auta?.some(a => a.warianty?.some(w => w.ean && w.aktywny && eanValidation.dupEans.has(w.ean.trim()))));
@@ -147,17 +151,54 @@ export default function Dashboard({ goToModel, setTab }) {
           </div>
         )}
 
-        {/* Per-account stats */}
+        {/* Per-account stats + Allegro sync */}
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, marginTop: 12 }}>
-          <h3 style={{ fontSize: 14, color: '#2d3748', marginBottom: 10 }}>📊 Oferty per konto</h3>
+          <h3 style={{ fontSize: 14, color: '#2d3748', marginBottom: 10 }}>📊 Synchronizacja Allegro</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
             {KONTA.map(k => {
               const field = k === 'SMA_Imiola' ? 'oferty_sma' : k === 'Zahakowani_pl' ? 'oferty_zahakowani' : 'oferty_autohaki';
-              const cnt = models.reduce((s, m) => s + (m.auta || []).reduce((s2, a) => s2 + (a.warianty || []).filter(w => w.aktywny && w[field]).length, 0), 0);
+              const catalogCnt = models.reduce((s, m) => s + (m.auta || []).reduce((s2, a) => s2 + (a.warianty || []).filter(w => w.aktywny && w[field]).length, 0), 0);
+              const allegroList = allegroOferty[k] || [];
+              const allegroCnt = allegroList.length;
+
+              // Build quick mapping check
+              const ofertaIds = new Set();
+              const dupOfertaIds = new Set();
+              models.forEach(m => m.auta?.forEach(a => a.warianty?.forEach(w => {
+                const pole = w[field];
+                if (pole) {
+                  pole.split(',').map(s => s.trim()).filter(Boolean).forEach(id => {
+                    if (w.duplikat_id) dupOfertaIds.add(id);
+                    else ofertaIds.add(id);
+                  });
+                }
+              })));
+              const mapped = allegroList.filter(o => ofertaIds.has(o.allegro_id)).length;
+              const dups = allegroList.filter(o => dupOfertaIds.has(o.allegro_id)).length;
+              const unmapped = allegroCnt - mapped - dups;
+              const pct = allegroCnt ? Math.round(mapped / allegroCnt * 100) : 0;
+
               return (
-                <div key={k} style={{ padding: '10px 14px', background: '#f7fafc', borderRadius: 6, borderLeft: `4px solid ${KONTA_COLORS[k]}` }}>
-                  <div style={{ fontSize: 11, color: '#718096' }}>{k.replace(/_/g, ' ')}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: KONTA_COLORS[k] }}>{cnt}</div>
+                <div key={k} onClick={() => goToAllegro(k)}
+                  style={{ padding: '12px 14px', background: '#f7fafc', borderRadius: 8, borderLeft: `4px solid ${KONTA_COLORS[k]}`, cursor: 'pointer', transition: 'box-shadow 0.15s' }}
+                  onMouseEnter={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'}
+                  onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: KONTA_COLORS[k], marginBottom: 4 }}>{k.replace(/_/g, ' ')}</div>
+                  {allegroCnt > 0 ? (
+                    <>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: '#2d3748' }}>{allegroCnt} <span style={{ fontSize: 12, fontWeight: 400, color: '#718096' }}>ofert</span></div>
+                      <div style={{ fontSize: 11, color: '#718096', marginTop: 4 }}>
+                        <span style={{ color: '#38a169' }}>✅ {pct}%</span>
+                        {dups > 0 && <span style={{ color: '#e53e3e' }}> · 🔴 {dups}</span>}
+                        {unmapped > 0 && <span> · ⬜ {unmapped}</span>}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: '#a0aec0' }}>—</div>
+                      <div style={{ fontSize: 11, color: '#a0aec0', marginTop: 4 }}>Katalog: {catalogCnt} wpisów</div>
+                    </>
+                  )}
                 </div>
               );
             })}

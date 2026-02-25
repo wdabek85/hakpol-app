@@ -17,6 +17,7 @@ export default function Header({ tab, setTab }) {
     { id: 'dashboard', label: '🏠 Start' },
     { id: 'catalog', label: '📦 Katalog' },
     { id: 'eanbank', label: '📋 Bank EAN', badge: totalBankEans > 0 ? totalBankEans : null },
+    { id: 'allegro', label: '📊 Allegro' },
   ];
 
   return (

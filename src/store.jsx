@@ -9,6 +9,7 @@ export const useStore = () => useContext(StoreContext);
 export function StoreProvider({ children }) {
   const [models, setModels] = useState([]);
   const [eanBank, setEanBank] = useState([]); // [{id, model, ean}]
+  const [allegroOferty, setAllegroOferty] = useState({ SMA_Imiola: [], Zahakowani_pl: [], 'Auto-haki_pl': [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const saveTimer = useRef(null);
@@ -315,6 +316,47 @@ export function StoreProvider({ children }) {
     return true;
   }, [getAvailableEans, updateVariant]);
 
+  // ─── ALLEGRO OFERTY ───
+  const loadAllegroOferty = useCallback(async (konto) => {
+    const { data } = await supabase
+      .from('allegro_oferty')
+      .select('*')
+      .eq('konto', konto)
+      .order('allegro_id');
+    setAllegroOferty(prev => ({ ...prev, [konto]: data || [] }));
+    return data || [];
+  }, []);
+
+  const loadAllAllegroOferty = useCallback(async () => {
+    const { data } = await supabase
+      .from('allegro_oferty')
+      .select('*')
+      .order('konto, allegro_id');
+    const grouped = { SMA_Imiola: [], Zahakowani_pl: [], 'Auto-haki_pl': [] };
+    (data || []).forEach(o => {
+      if (grouped[o.konto]) grouped[o.konto].push(o);
+    });
+    setAllegroOferty(grouped);
+  }, []);
+
+  const upsertAllegroOferty = useCallback(async (konto, oferty) => {
+    setSaving(true);
+    // Batch upsert in chunks of 500
+    for (let i = 0; i < oferty.length; i += 500) {
+      const chunk = oferty.slice(i, i + 500).map(o => ({ ...o, konto }));
+      await supabase.from('allegro_oferty').upsert(chunk, { onConflict: 'konto,allegro_id' });
+    }
+    await loadAllegroOferty(konto);
+    setSaving(false);
+  }, [loadAllegroOferty]);
+
+  const clearAllegroKonto = useCallback(async (konto) => {
+    setSaving(true);
+    await supabase.from('allegro_oferty').delete().eq('konto', konto);
+    setAllegroOferty(prev => ({ ...prev, [konto]: [] }));
+    setSaving(false);
+  }, []);
+
   // ─── COMPUTED STATS ───
   const stats = useMemo(() => {
     const totalAuta = models.reduce((s, m) => s + (m.auta?.length || 0), 0);
@@ -344,12 +386,13 @@ export function StoreProvider({ children }) {
   }, [models, eanBank, eanValidation, getEanBankOwners]);
 
   const value = {
-    models, eanBank, eanBankByModel, loading, saving, stats, eanValidation,
+    models, eanBank, eanBankByModel, allegroOferty, loading, saving, stats, eanValidation,
     addModel, updateModel, deleteModel,
     addAuto, updateAuto, deleteAuto, duplicateAuto,
     updateVariant,
     addEansToBank, removeEanFromBank, clearBankForModel,
     getEanBankOwners, getAvailableEans, assignNextEan,
+    loadAllegroOferty, loadAllAllegroOferty, upsertAllegroOferty, clearAllegroKonto,
     loadAll,
   };
 
