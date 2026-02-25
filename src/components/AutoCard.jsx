@@ -8,12 +8,12 @@ const td = { padding: '5px 10px', borderBottom: '1px solid #f7fafc' };
 const inp = { width: '100%', padding: '3px 6px', border: '1px solid #e2e8f0', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' };
 
 function AutoCard({ auto, model }) {
-  const { updateAuto, deleteAuto, duplicateAuto, updateVariant, eanValidation, getEanBankOwners, getAvailableEans, assignNextEan } = useStore();
+  const { updateAuto, deleteAuto, duplicateAuto, updateVariant, eanValidation, getEanBankOwners, getAvailableEans, assignNextEan, duplikatyByWariant, addDuplikat, updateDuplikat, deleteDuplikat } = useStore();
   const [expanded, setExpanded] = useState(true);
 
   const filledCount = (auto.warianty || []).filter(w => w.aktywny && w.ean).length;
   const activeCount = (auto.warianty || []).filter(w => w.aktywny).length;
-  const dupCount = (auto.warianty || []).filter(w => w.duplikat_id).length;
+  const dupCount = (auto.warianty || []).reduce((s, w) => s + (duplikatyByWariant.get(w.id)?.length || 0), 0);
 
   const handleNameChange = useCallback((e) => {
     updateAuto(auto.id, { nazwa: e.target.value });
@@ -40,7 +40,7 @@ function AutoCard({ auto, model }) {
             onBlur={e => { e.target.style.border = '1px solid transparent'; e.target.style.background = 'transparent'; }} />
           <span style={{ fontSize: 11, color: '#a0aec0', whiteSpace: 'nowrap' }}>
             EAN: {filledCount}/{activeCount}
-            {dupCount > 0 && <span style={{ color: '#e53e3e', fontWeight: 700 }}> · 🗑 {dupCount}</span>}
+            {dupCount > 0 && <span style={{ color: '#e53e3e', fontWeight: 700 }}> · 🔴 {dupCount}</span>}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -59,16 +59,20 @@ function AutoCard({ auto, model }) {
               <th style={{ ...th, textAlign: 'left' }}>EAN</th>
               <th style={{ ...th, textAlign: 'left', width: 80 }}>Cena PLN</th>
               {KONTA.map(k => <th key={k} style={{ ...th, textAlign: 'left' }}><span style={{ color: KONTA_COLORS[k] }}>●</span> {k.replace(/_/g, ' ')}</th>)}
-              <th style={{ ...th, textAlign: 'left' }}>🗑 Duplikat</th>
+              <th style={{ ...th, textAlign: 'center', width: 80 }}>Duplikaty</th>
             </tr>
           </thead>
           <tbody>
-            {(auto.warianty || []).map(w => (
-              <VariantRow key={w.id} w={w} model={model} auto={auto}
-                updateVariant={updateVariant} eanValidation={eanValidation}
-                getEanBankOwners={getEanBankOwners} getAvailableEans={getAvailableEans}
-                assignNextEan={assignNextEan} />
-            ))}
+            {(auto.warianty || []).map(w => {
+              const wDups = duplikatyByWariant.get(w.id) || [];
+              return (
+                <VariantWithDups key={w.id} w={w} model={model} auto={auto} wDups={wDups}
+                  updateVariant={updateVariant} eanValidation={eanValidation}
+                  getEanBankOwners={getEanBankOwners} getAvailableEans={getAvailableEans}
+                  assignNextEan={assignNextEan} addDuplikat={addDuplikat}
+                  updateDuplikat={updateDuplikat} deleteDuplikat={deleteDuplikat} />
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -76,7 +80,21 @@ function AutoCard({ auto, model }) {
   );
 }
 
-const VariantRow = memo(function VariantRow({ w, model, auto, updateVariant, eanValidation, getEanBankOwners, getAvailableEans, assignNextEan }) {
+function VariantWithDups({ w, model, auto, wDups, updateVariant, eanValidation, getEanBankOwners, getAvailableEans, assignNextEan, addDuplikat, updateDuplikat, deleteDuplikat }) {
+  return (
+    <>
+      <VariantRow w={w} model={model} auto={auto} wDups={wDups}
+        updateVariant={updateVariant} eanValidation={eanValidation}
+        getEanBankOwners={getEanBankOwners} getAvailableEans={getAvailableEans}
+        assignNextEan={assignNextEan} addDuplikat={addDuplikat} />
+      {wDups.map(d => (
+        <DuplikatRow key={d.id} dup={d} updateDuplikat={updateDuplikat} deleteDuplikat={deleteDuplikat} />
+      ))}
+    </>
+  );
+}
+
+const VariantRow = memo(function VariantRow({ w, model, auto, wDups, updateVariant, eanValidation, getEanBankOwners, getAvailableEans, assignNextEan, addDuplikat }) {
   const isDupEan = w.ean && w.aktywny && eanValidation.dupEans.has(w.ean.trim());
   const dupInfo = isDupEan ? eanValidation.eanCount[w.ean.trim()]?.filter(x => !(x.model === model.nr_kat && x.auto === auto.nazwa && x.wiazka === w.wiazka)) : [];
 
@@ -93,6 +111,7 @@ const VariantRow = memo(function VariantRow({ w, model, auto, updateVariant, ean
   else if (notInBank) titleText = '⚠️ EAN nie jest w banku';
 
   const availCount = getAvailableEans(model.nr_kat).length;
+  const dupCount = wDups.length;
 
   const kontoFields = { SMA_Imiola: 'oferty_sma', Zahakowani_pl: 'oferty_zahakowani', 'Auto-haki_pl': 'oferty_autohaki' };
 
@@ -146,11 +165,57 @@ const VariantRow = memo(function VariantRow({ w, model, auto, updateVariant, ean
             style={{ ...inp, fontSize: 11, color: w[kontoFields[k]] ? KONTA_COLORS[k] : '#a0aec0', borderColor: w[kontoFields[k]] ? KONTA_COLORS[k] + '66' : '#e2e8f0' }} />
         </td>
       ))}
-      <td style={td}>
-        <input value={w.duplikat_id || ''} disabled={!w.aktywny}
-          onChange={e => updateVariant(w.id, 'duplikat_id', e.target.value)}
-          placeholder="ID dupl."
-          style={{ ...inp, fontSize: 11, color: w.duplikat_id ? '#c53030' : '#a0aec0', background: w.duplikat_id ? '#fff5f5' : 'white', borderColor: w.duplikat_id ? '#feb2b2' : '#e2e8f0' }} />
+      <td style={{ ...td, textAlign: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+          {dupCount > 0 && <span style={{ background: '#fed7d7', color: '#c53030', padding: '1px 6px', borderRadius: 10, fontSize: 10, fontWeight: 700 }}>🔴 {dupCount}</span>}
+          <button onClick={() => addDuplikat(w.id)} title="Dodaj duplikat"
+            style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: 4, cursor: 'pointer', fontSize: 13, padding: '1px 6px', color: '#718096', lineHeight: 1 }}>
+            ➕
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+});
+
+const dupInp = { padding: '4px 8px', border: '1px solid #feb2b2', borderRadius: 4, fontSize: 12, boxSizing: 'border-box', background: '#fff5f5', color: '#c53030' };
+const dupLabel = { fontWeight: 600, color: '#c53030', fontSize: 11, whiteSpace: 'nowrap' };
+
+// Total columns in variant table: checkbox + wiazka + ean + cena + 3 konta + duplikaty = 8
+const DUP_COLSPAN = 4 + KONTA.length;
+
+const DuplikatRow = memo(function DuplikatRow({ dup, updateDuplikat, deleteDuplikat }) {
+  const handleChange = useCallback((field, value) => {
+    updateDuplikat(dup.id, field, value);
+  }, [dup.id, updateDuplikat]);
+
+  const handleDelete = useCallback(() => {
+    deleteDuplikat(dup.id);
+  }, [dup.id, deleteDuplikat]);
+
+  return (
+    <tr>
+      <td colSpan={DUP_COLSPAN} style={{ padding: 0, borderBottom: '1px solid #fee2e2' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px 6px 30px', background: '#fff5f5', borderLeft: '3px solid #e53e3e', fontSize: 12 }}>
+          <span style={{ fontSize: 10 }}>🔴</span>
+          <select value={dup.konto} onChange={e => handleChange('konto', e.target.value)}
+            style={{ ...dupInp, width: 140, fontWeight: 600, color: KONTA_COLORS[dup.konto] || '#c53030', flexShrink: 0 }}>
+            {KONTA.map(k => <option key={k} value={k}>{k.replace(/_/g, ' ')}</option>)}
+          </select>
+          <span style={dupLabel}>ID:</span>
+          <input value={dup.allegro_offer_id || ''} onChange={e => handleChange('allegro_offer_id', e.target.value)}
+            placeholder="ID oferty" style={{ ...dupInp, width: 160, flexShrink: 0 }} />
+          <span style={dupLabel}>EAN:</span>
+          <input value={dup.ean || ''} onChange={e => handleChange('ean', e.target.value)}
+            placeholder="EAN" style={{ ...dupInp, width: 160, flexShrink: 0 }} />
+          <span style={dupLabel}>Uwagi:</span>
+          <input value={dup.uwagi || ''} onChange={e => handleChange('uwagi', e.target.value)}
+            placeholder="Uwagi" style={{ ...dupInp, flex: 1, minWidth: 80 }} />
+          <button onClick={handleDelete} title="Usuń duplikat"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#e53e3e', flexShrink: 0, padding: '2px 4px' }}>
+            🗑️
+          </button>
+        </div>
       </td>
     </tr>
   );

@@ -7,7 +7,7 @@ const btn = { padding: '6px 12px', border: 'none', borderRadius: 6, cursor: 'poi
 
 export default function AllegroSync({ initialKonto }) {
   const {
-    models, allegroOferty, saving,
+    models, allegroOferty, saving, duplikatyAllegroIds,
     loadAllegroOferty, upsertAllegroOferty, clearAllegroKonto,
   } = useStore();
 
@@ -36,17 +36,20 @@ export default function AllegroSync({ initialKonto }) {
     models.forEach(m => {
       m.auta?.forEach(a => {
         a.warianty?.forEach(w => {
-          const isDup = !!w.duplikat_id;
           const fields = [w.oferty_sma, w.oferty_zahakowani, w.oferty_autohaki];
           fields.forEach((pole) => {
             if (pole) {
               pole.split(',').map(s => s.trim()).filter(Boolean).forEach(id => {
-                map[id] = {
-                  model: m.nr_kat,
-                  auto: a.nazwa,
-                  wiazka: w.wiazka || '',
-                  isDuplicate: isDup,
-                };
+                const isDup = duplikatyAllegroIds.has(id);
+                // Duplikat has higher priority — overwrite only if new entry is a duplicate
+                if (!map[id] || isDup) {
+                  map[id] = {
+                    model: m.nr_kat,
+                    auto: a.nazwa,
+                    wiazka: w.wiazka || '',
+                    isDuplicate: isDup,
+                  };
+                }
               });
             }
           });
@@ -54,7 +57,7 @@ export default function AllegroSync({ initialKonto }) {
       });
     });
     return map;
-  }, [models]);
+  }, [models, duplikatyAllegroIds]);
 
   const oferty = allegroOferty[activeKonto] || [];
 

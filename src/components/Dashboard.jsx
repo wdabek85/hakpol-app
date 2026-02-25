@@ -5,14 +5,14 @@ import { KONTA, KONTA_COLORS } from '../utils/constants.js';
 const btn = { padding: '6px 12px', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 };
 
 export default function Dashboard({ goToModel, setTab, goToAllegro }) {
-  const { models, eanBankByModel, allegroOferty, stats, eanValidation, getAvailableEans, loadAllAllegroOferty } = useStore();
+  const { models, eanBankByModel, allegroOferty, stats, eanValidation, getAvailableEans, loadAllAllegroOferty, duplikatyByWariant, duplikatyAllegroIds } = useStore();
 
   // Load allegro counts on mount
   useEffect(() => { loadAllAllegroOferty(); }, [loadAllAllegroOferty]);
 
   const emptyModels = models.filter(m => !m.auta?.length);
   const modelsWithDupEan = models.filter(m => m.auta?.some(a => a.warianty?.some(w => w.ean && w.aktywny && eanValidation.dupEans.has(w.ean.trim()))));
-  const modelsWithDupOferty = models.filter(m => m.auta?.some(a => a.warianty?.some(w => w.duplikat_id)));
+  const modelsWithDupOferty = models.filter(m => m.auta?.some(a => a.warianty?.some(w => duplikatyByWariant.has(w.id))));
   const newModels = models.filter(m => m.uwagi?.includes('🆕'));
   const modelsWithUwagiList = models.filter(m => m.uwagi && !m.uwagi.includes('🆕'));
   const missingEanModels = models.filter(m => m.auta?.length > 0 && m.auta.some(a => a.warianty?.some(w => w.aktywny && !w.ean)));
@@ -163,18 +163,16 @@ export default function Dashboard({ goToModel, setTab, goToAllegro }) {
 
               // Build quick mapping check
               const ofertaIds = new Set();
-              const dupOfertaIds = new Set();
               models.forEach(m => m.auta?.forEach(a => a.warianty?.forEach(w => {
                 const pole = w[field];
                 if (pole) {
                   pole.split(',').map(s => s.trim()).filter(Boolean).forEach(id => {
-                    if (w.duplikat_id) dupOfertaIds.add(id);
-                    else ofertaIds.add(id);
+                    ofertaIds.add(id);
                   });
                 }
               })));
-              const mapped = allegroList.filter(o => ofertaIds.has(o.allegro_id)).length;
-              const dups = allegroList.filter(o => dupOfertaIds.has(o.allegro_id)).length;
+              const mapped = allegroList.filter(o => ofertaIds.has(o.allegro_id) && !duplikatyAllegroIds.has(o.allegro_id)).length;
+              const dups = allegroList.filter(o => duplikatyAllegroIds.has(o.allegro_id)).length;
               const unmapped = allegroCnt - mapped - dups;
               const pct = allegroCnt ? Math.round(mapped / allegroCnt * 100) : 0;
 

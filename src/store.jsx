@@ -9,10 +9,12 @@ export const useStore = () => useContext(StoreContext);
 export function StoreProvider({ children }) {
   const [models, setModels] = useState([]);
   const [eanBank, setEanBank] = useState([]); // [{id, model, ean}]
+  const [duplikaty, setDuplikaty] = useState([]);
   const [allegroOferty, setAllegroOferty] = useState({ SMA_Imiola: [], Zahakowani_pl: [], 'Auto-haki_pl': [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const saveTimer = useRef(null);
+  const dupSaveTimer = useRef(null);
 
   // ─── LOAD ALL DATA ───
   const loadAll = useCallback(async () => {
@@ -40,8 +42,15 @@ export function StoreProvider({ children }) {
         .select('id, model, ean')
         .order('model, ean');
 
+      // Load duplikaty
+      const { data: dData } = await supabase
+        .from('duplikaty')
+        .select('*')
+        .order('created_at');
+
       setModels(mData || []);
       setEanBank(eData || []);
+      setDuplikaty(dData || []);
     } catch (e) {
       console.error('Load failed:', e);
     }
@@ -58,6 +67,7 @@ export function StoreProvider({ children }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'auta' }, () => loadAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'warianty' }, () => loadAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ean_bank' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'duplikaty' }, () => loadAll())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -187,6 +197,61 @@ export function StoreProvider({ children }) {
       setSaving(false);
     }, 500);
   }, []);
+
+  // ─── DUPLIKATY CRUD ───
+  const addDuplikat = useCallback(async (wariantId) => {
+    setSaving(true);
+    const { data, error } = await supabase
+      .from('duplikaty')
+      .insert({ wariant_id: wariantId, konto: 'SMA_Imiola', allegro_offer_id: '', ean: '', uwagi: '' })
+      .select()
+      .single();
+    if (!error && data) {
+      setDuplikaty(prev => [...prev, data]);
+    }
+    setSaving(false);
+    return data;
+  }, []);
+
+  const updateDuplikat = useCallback((id, field, value) => {
+    // Optimistic update
+    setDuplikaty(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
+
+    // Debounced DB save
+    if (dupSaveTimer.current) clearTimeout(dupSaveTimer.current);
+    dupSaveTimer.current = setTimeout(async () => {
+      setSaving(true);
+      await supabase.from('duplikaty').update({ [field]: value }).eq('id', id);
+      setSaving(false);
+    }, 500);
+  }, []);
+
+  const deleteDuplikat = useCallback(async (id) => {
+    setSaving(true);
+    await supabase.from('duplikaty').delete().eq('id', id);
+    setDuplikaty(prev => prev.filter(d => d.id !== id));
+    setSaving(false);
+  }, []);
+
+  // ─── DUPLIKATY COMPUTED HELPERS ───
+  const duplikatyByWariant = useMemo(() => {
+    const map = new Map();
+    duplikaty.forEach(d => {
+      if (!map.has(d.wariant_id)) map.set(d.wariant_id, []);
+      map.get(d.wariant_id).push(d);
+    });
+    return map;
+  }, [duplikaty]);
+
+  const duplikatyAllegroIds = useMemo(() => {
+    const set = new Set();
+    duplikaty.forEach(d => {
+      if (d.allegro_offer_id && d.allegro_offer_id.trim()) {
+        set.add(d.allegro_offer_id.trim());
+      }
+    });
+    return set;
+  }, [duplikaty]);
 
   // ─── EAN BANK ───
   const eanBankByModel = useMemo(() => {
@@ -364,7 +429,7 @@ export function StoreProvider({ children }) {
     const filledEan = models.reduce((s, m) => s + (m.auta || []).reduce((s2, a) => s2 + (a.warianty || []).filter(w => w.aktywny && w.ean).length, 0), 0);
     const modelsWithAuta = models.filter(m => m.auta?.length > 0).length;
     const modelsWithUwagi = models.filter(m => m.uwagi).length;
-    const totalDuplikaty = models.reduce((s, m) => s + (m.auta || []).reduce((s2, a) => s2 + (a.warianty || []).filter(w => w.duplikat_id).length, 0), 0);
+    const totalDuplikaty = duplikaty.length;
     const totalBankEans = eanBank.length;
     const totalBankConflicts = Object.keys(eanValidation.bankConflicts).length;
 
@@ -383,13 +448,15 @@ export function StoreProvider({ children }) {
       totalDuplikaty, totalBankEans, totalBankConflicts, wrongModelEanList,
       dupEanCount: eanValidation.dupEans.size,
     };
-  }, [models, eanBank, eanValidation, getEanBankOwners]);
+  }, [models, eanBank, duplikaty, eanValidation, getEanBankOwners]);
 
   const value = {
-    models, eanBank, eanBankByModel, allegroOferty, loading, saving, stats, eanValidation,
+    models, eanBank, eanBankByModel, duplikaty, duplikatyByWariant, duplikatyAllegroIds,
+    allegroOferty, loading, saving, stats, eanValidation,
     addModel, updateModel, deleteModel,
     addAuto, updateAuto, deleteAuto, duplicateAuto,
     updateVariant,
+    addDuplikat, updateDuplikat, deleteDuplikat,
     addEansToBank, removeEanFromBank, clearBankForModel,
     getEanBankOwners, getAvailableEans, assignNextEan,
     loadAllegroOferty, loadAllAllegroOferty, upsertAllegroOferty, clearAllegroKonto,
