@@ -7,7 +7,7 @@ const btn = { padding: '6px 12px', border: 'none', borderRadius: 6, cursor: 'poi
 
 export default function AllegroSync({ initialKonto }) {
   const {
-    models, allegroOferty, saving, duplikatyAllegroIds,
+    models, allegroOferty, saving, duplikaty, duplikatyAllegroIds,
     loadAllegroOferty, upsertAllegroOferty, clearAllegroKonto,
   } = useStore();
 
@@ -30,25 +30,22 @@ export default function AllegroSync({ initialKonto }) {
     loadAllegroOferty(activeKonto);
   }, [activeKonto, loadAllegroOferty]);
 
-  // Build ofertaMap from catalog data
+  // Build ofertaMap from catalog data + duplikaty table
   const ofertaMap = useMemo(() => {
     const map = {};
+    // Wariant lookup for duplikaty (wariant_id → {model, auto, wiazka})
+    const variantInfo = {};
     models.forEach(m => {
       m.auta?.forEach(a => {
         a.warianty?.forEach(w => {
+          variantInfo[w.id] = { model: m.nr_kat, auto: a.nazwa, wiazka: w.wiazka || '' };
+          // Map offers from variant fields
           const fields = [w.oferty_sma, w.oferty_zahakowani, w.oferty_autohaki];
           fields.forEach((pole) => {
             if (pole) {
               pole.split(',').map(s => s.trim()).filter(Boolean).forEach(id => {
-                const isDup = duplikatyAllegroIds.has(id);
-                // Duplikat has higher priority — overwrite only if new entry is a duplicate
-                if (!map[id] || isDup) {
-                  map[id] = {
-                    model: m.nr_kat,
-                    auto: a.nazwa,
-                    wiazka: w.wiazka || '',
-                    isDuplicate: isDup,
-                  };
+                if (!map[id]) {
+                  map[id] = { model: m.nr_kat, auto: a.nazwa, wiazka: w.wiazka || '', isDuplicate: false };
                 }
               });
             }
@@ -56,8 +53,17 @@ export default function AllegroSync({ initialKonto }) {
         });
       });
     });
+    // Add duplikaty from the duplikaty table — these override as isDuplicate: true
+    duplikaty.forEach(d => {
+      const offerId = d.allegro_offer_id?.trim();
+      if (!offerId) return;
+      const info = variantInfo[d.wariant_id];
+      if (info) {
+        map[offerId] = { ...info, isDuplicate: true };
+      }
+    });
     return map;
-  }, [models, duplikatyAllegroIds]);
+  }, [models, duplikaty]);
 
   const oferty = allegroOferty[activeKonto] || [];
 

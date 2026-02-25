@@ -171,8 +171,10 @@ export default function Dashboard({ goToModel, setTab, goToAllegro }) {
                   });
                 }
               })));
-              const mapped = allegroList.filter(o => ofertaIds.has(o.allegro_id) && !duplikatyAllegroIds.has(o.allegro_id)).length;
+              // Dups = allegro offers whose ID is in duplikaty table (red, highest priority)
+              // Mapped = allegro offers matched via variant fields but NOT a duplikat
               const dups = allegroList.filter(o => duplikatyAllegroIds.has(o.allegro_id)).length;
+              const mapped = allegroList.filter(o => ofertaIds.has(o.allegro_id) && !duplikatyAllegroIds.has(o.allegro_id)).length;
               const unmapped = allegroCnt - mapped - dups;
               const pct = allegroCnt ? Math.round(mapped / allegroCnt * 100) : 0;
 
